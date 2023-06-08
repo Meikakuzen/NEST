@@ -10,7 +10,7 @@
 ## Interfaces y UUID
 
 - Voy a crear una interfaz para que la data luzca de cierta manera. 
-- Va a terminar siendo una clase, pero por ahora lo hago con una interfaz
+- **Va a terminar siendo una clase**, pero por ahora lo hago con una interfaz
 - cars/interfaces/car.interface.ts
 
 ~~~js
@@ -21,7 +21,7 @@ export interface Car{
 }
 ~~~
 
-- Implemento la interfaz en cars ( en el servicio)
+- Implemento la interfaz en cars (en el servicio)
 
 ~~~js
 import { Injectable, NotFoundException } from '@nestjs/common';
@@ -60,7 +60,7 @@ export class CarsService {
 }
 ~~~
 
-- Prefiero trabajar con UUIDs para los ids en lugar de usar correlativos (1,2,3...)
+- Prefiero trabajar con **UUIDs** para los ids en lugar de usar correlativos (1,2,3...)
 - Instalo el paquete y sus tipos
 
 > npm i uuid
@@ -76,7 +76,7 @@ export interface Car{
 }
 ~~~
 
-- Uso el paquete en el controlador, la versión 4
+- Uso el paquete en el controlador, **la versión 4**
 - Cambio el tipo del id en el método por string
 
 ~~~js
@@ -117,8 +117,8 @@ export class CarsService {
 }
 ~~~
 
-- Si hago un query a la DB (cuando la DB está grabando el id como un UUID) y no es un UUID va a dar un error de DB
-- Eso es un error 500 (*Internal Server Error*)
+- Si hago un *query* a la DB (cuando la DB está grabando el id como un UUID) y no es un *UUID* va a dar un error de DB
+- Eso es un *error 500* (**Internal Server Error**)
 - Uso el **ParseUUIDPipe** en el controlador. Cambio el tipo a string
 - Debo verificar el id antes de hacer la petición (no quiero dejarle ese trabajo a la DB)
 
@@ -129,7 +129,7 @@ getCarById(@Param('id', ParseUUIDPipe ) id: string){
 }
 ~~~
 
-- Puedo crear una nueva instancia de *ParseUUIDPipe* para que trabaje con una versión específica de uuid
+- Puedo crear una nueva instancia de *ParseUUIDPipe* para que trabaje con una versión específica de *UUID*
 - Dentro de los pipes también tengo la opción de personalizar mensajes de error 
 
 ~~~js
@@ -143,7 +143,7 @@ getCarById(@Param('id', new ParseUUIDPipe({version: '4'}) ) id: string){
 ## Dto: Data Transfer Object
 
 - Va a ser una clase que me va a ayudar a decirle a mi controlador que estoy esperando una clase de cierto aspecto, y al pasárselo a mi servicio, mi servicio sabe que esa clase luce de cierta manera
-- Se aconseja que los dto sean readonly, porque cuando se crea su instancia no cambian las propiedades.
+- Se aconseja que los dto sean *readonly*, porque cuando se crea su instancia no cambian las propiedades.
   - Yo no quiero reasignar el valor de un dto porque puede ser un error  
 - Creo en /cars/dtos/create-car.dto.ts
 
@@ -154,8 +154,8 @@ export class CreateCarDto{
 }
 ~~~
 
-- Entonces, el body que llega del método POST va aser de tipo CreateCarDto
-- Lo puedo renombrar a createCarDto. Todavía no es una instancia, pero es un objeto que espero que luzca como el CreateCarDto 
+- Entonces, el body que llega del método POST va aser de tipo *CreateCarDto*
+- Lo puedo renombrar a *createCarDto*. Todavía no es una instancia, pero es un objeto que espero que luzca como el *CreateCarDto* 
 
 ~~~js
 @Post()
@@ -172,9 +172,9 @@ createCar(@Body() createCarDto: CreateCarDto){
 - Nest proporciona **ValidationPipe** que trabaja con librerías externas como **class-validator** y **class-transformer**
 - Algunos decoradores de class-validator:
   - IsOptional, IsPositive, IsMongoId, IsArray,IsString, IsUUID, IsDecimal, IsBoolean, IsEmail, IsDate, IsUrl....
-- Podemos aplicar pipes a nivel de parámetro, cómo se ha visto, a nivel de controlador, a nivel global de controlador ( en la clase), o incluso a nivel global de aplicación en el main.ts
+- Podemos aplicar pipes a nivel de parámetro, cómo se ha visto, a nivel de controlador, a nivel global de controlador ( en la clase), o incluso a nivel global de aplicación en el *main.ts*
 - Uso **@UsePipes()** con el **ValidationPipe** para validar el dto
-- Debo instalar el class-validator y class-transformer
+- Debo instalar el **class-validator y class-transformer**
 
 ~~~js
 @Post()
@@ -312,7 +312,7 @@ export class CreateCarDto{
 
 ## Crear nuevo coche
 
-- Creo el método en el servicio createCar
+- Creo el método **createCar** en el servicio *CarsService*
 - Lo llamo desde el controlador
 
 ~~~js
@@ -376,7 +376,7 @@ createCar(createCarDto: CreateCarDto ){
 ## Actualizar coche
 
 - Creo el método en el service para poder llamarlo desde el controlador
-- En lugar de usar el CreateCarDto voy a crear otro dto porque puedo querer actualizar solo uno de los valores (brand o model)
+- En lugar de usar el *CreateCarDto* voy a crear otro dto porque puedo querer actualizar solo uno de los valores (brand o model)
 - Uso el decorador **@IsOptional()**. les añado ? para que de el lado de Typescript también lo marque como opcional
 - Es muy probable que me envien el id en el objeto (en el frontend) para hacer la validación
 
@@ -400,7 +400,7 @@ export class UpdateCarDto{
 }
 ~~~
 
-- hay algo que se puede hacer para usar las propiedades de CreateCarDto y que sean opcionales (se verá más adelante)
+- hay algo que se puede hacer para usar las propiedades de *CreateCarDto* y que sean opcionales (**PartialTypes**, se verá más adelante)
 - cars.controller.ts
 
 ~~~js
@@ -416,7 +416,7 @@ updateCar(
   - Hago los imports de create-car.dto.ts y update-car.dto.ts
   - Cambio la palabra import por export
 - Añado la lógica en el servicio. En este caso estamos trabajando con un arreglo pero sería con la DB
-- Ya tengo el método findOneById (que también maneja la excepción)
+- Ya tengo el método *findOneById* (que también maneja la excepción)
 - Uso let porque voy a cambiar lo que tengo en car
 - Mapeo cars y lo guardo en el propio cars
 - Si el id es el mismo uso spread para quedarme con las propiedades existentes, las sobreescribo con el update y me quedo el id existente
@@ -474,7 +474,7 @@ updateCar(
 
 ## Borrar coche
 
-- Creo el método deleteCar en el servicio. Lo llamo en el controller
+- Creo el método *deleteCar* en el servicio. Lo llamo en el controller
 - cars.controller.ts
 
 ~~~js

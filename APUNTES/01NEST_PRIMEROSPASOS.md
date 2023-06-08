@@ -40,7 +40,7 @@ export class AppModule {}
 ~~~
 
 - Los módulos acoplan y desacoplan un conjunto de funcionalidad específica por dominio
-- El main tiene una función asíncrona que es bootstrap (puedo llamarlo como quiera, main por ejemplo)
+- El **main** tiene una función asíncrona que es *bootstrap* (puedo llamarlo como quiera, main por ejemplo)
 
 ~~~js
 import { NestFactory } from '@nestjs/core';
@@ -70,7 +70,7 @@ bootstrap();
 - Crea la carpeta cars. La clase cars aparece con el decorador **@Module({})**
 - Aparece en el array de imports de app.module (el módulo principal)
 - Creo el controlador en */car-dealership* con *nest g co car-dealership*
-- Crea una clase CarsController con el decorador **@Controller('cars')**
+- Crea una clase **CarsController** con el decorador **@Controller('cars')**
 - El controlador lo ha añadido en el modulo de cars
   - Si encuentra un módulo con el nombre cars lo coloca ahí, si no lo hará en el módulo más cercano
 - Creo un método GET en el controlador
@@ -135,8 +135,8 @@ export class CarsController {
 
 > nest g s cars --no-spec     //El --no-spec es para que no cree el archivo de test
 
-- No es más que una clase llamada CarsService con el decorador **@Injectable()**
-- El servicio aparece en el array de providers del módulo CarsModule
+- No es más que una clase llamada **CarsService** con el decorador **@Injectable()**
+- El servicio aparece en el array de providers del módulo *CarsModule*
 - Voy a mockear la db en el servicio
 
 ~~~js
@@ -171,8 +171,8 @@ export class CarsService {
 
 ## Inyección de dependencias
 
-- Declaro en el constructor el servicio private porque no lo voy a usar fuera de este controlador, y readonly para que no cambie accidentalmente algo a lo que apunte
-- El arreglo de cars no aparece en el autocompletado de carsService. porque es privado. Debo crear un método para ello 
+- Declaro en el constructor el servicio *private* porque no lo voy a usar fuera de este controlador, y *readonly* para que no cambie accidentalmente algo a lo que apunte
+- El arreglo de cars no aparece en el autocompletado de *carsService*. porque es **privado**. Debo crear un método para ello 
 
 ~~~js
 import { Controller, Get, Param } from '@nestjs/common';
@@ -195,7 +195,7 @@ export class CarsController {
 }
 ~~~  
 
-- Añado el método findAll()
+- Añado el método *findAll()*
 
 ~~~js
 import { Injectable } from '@nestjs/common';
@@ -227,7 +227,7 @@ export class CarsService {
 }
 ~~~
 
-- Ahora si dispongo del arreglo de cars en el servicio con el método findAll
+- Ahora si dispongo del arreglo de cars en el servicio con el método *findAll*
 
 ~~~js
 import { Controller, Get, Param } from '@nestjs/common';
@@ -250,7 +250,7 @@ export class CarsController {
 }
 ~~~
 
-- Creo también el método findOneById en el servicio
+- Creo también el método *findOneById* en el servicio
 
 ~~~js
    findOneById(id: number){
@@ -284,7 +284,7 @@ export class CarsController {
 # Pipes
 
 - Hay que implementar una validación del argumento que le paso como id
-- Si pasara algo que no es un numero como 3a me devolvería un NaN. Debo manejar este tipo de errores
+- Si pasara algo que no es un numero como 3a me devolvería un *NaN*. Debo manejar este tipo de errores
 - Los pipes transforman la data recibida en requests, para asegurar un tipo, valor o instancia de un objeto. 
 - Pipes integrados por defecto
 
@@ -321,7 +321,7 @@ export class CarsController {
 - Si yo lanzo un error dentro del controlador con *throw new Error*, el servidor responde con *500 Internal Server Error* y en consola me aparece el error 
 - La *Exception Zone* incluye cualquier zona menos los middlewares y los *Exception Filters*
 - Cualquier error (no controlado) que sea lanzado en la *Exception Zone* será lanzado automáticamente por Nest 
-- **Falta una cosa**: si yo pongo un id válido ( un número ) pero que no existe en la DB me manda un status 200 cómo que todo lo hizo correcto. Esto no debería ser así
+- **Falta una cosa**: si yo pongo un id válido ( un número ) pero que no existe en la DB me manda un *status 200* cómo que todo lo hizo correcto. Esto no debería ser así
 -----
 
 ## Exception Filter
@@ -384,7 +384,7 @@ findOneById(id: number){
     }
 ~~~
 
-- **NOTA:** En el Patch, si no pongo nada en el body me regresa un status 200 igualmente!
+- **NOTA:** En el Patch, si no pongo nada en el body me regresa un *status 200* igualmente!
 - La implementación de los métodos en la siguiente sección
 
 
