@@ -1,8 +1,8 @@
 # 03 NEST CLI CRUD 
 
-- El comando resources me ayuda a crear automáticamente los servicios, controladores, dtos, etc
+- El comando **resource** me ayuda a crear automáticamente los servicios, controladores, dtos, etc
 - En esta sección vamos a aprender la comunicación entre modulos y a crear el módulo de Seed para llenar de coches la DB. Data precargada.
-- Los servicios son Singletons. Se crea una instancia y  esa instancia es compartida por los demás controladores o servicios mediante inyección de depndencias
+- Los servicios son Singletons. Se crea una instancia y  esa instancia es compartida por los demás controladores o servicios mediante inyección de dependencias
 - Ahora voy a trabajar con las marcas de los coches, las cuales van a tener su id y el nombre
 - Para ello tengo que volver a crear otro modulo, servicio, controlador...pero se hará mediante la linea de comandos
 - No lo voy a manejar con una interfaz si no con una entity
@@ -31,9 +31,9 @@
 
 ## CRUD completo de Brands
 
-- Empiezo por la entity. Cómo quiero que la información quede grabada en la base de datos
-- brand.entity.ts
+- Empiezo por la **entity**. Cómo quiero que la información quede grabada en la base de datos
 - Las entities no tienen la extension Entity (BrandEntity) porque si no la tabla se llamaría así
+- brand.entity.ts
 
 ~~~js
 export class Brand {
@@ -46,8 +46,8 @@ export class Brand {
 ~~~
 
 - Creo el arreglo de brands ( lo que sería la data) de tipo Brand[]
-- En findOne uso .find con el id para encontrar el coche. Hago la validación y mando la excepción si no lo encuentra. Retorno brand
-- En findAll solo tengo que devolver el arreglo con this.brands
+- En *findOne* uso .find con el id para encontrar el coche. Hago la validación y mando la excepción si no lo encuentra. Retorno brand
+- En *findAll* solo tengo que devolver el arreglo con this.brands
 - En el método create tengo que ver primero cómo quiero que luzca el dto
 
 ~~~js
@@ -61,11 +61,11 @@ export class CreateBrandDto {
 ~~~
 
 - Creo en el método el objeto brand, utilizo el .push y lo retorno
-- En update tengo que definir el dto
+- En *update* tengo que definir el dto
 - **NOTA**: cómo solo tengo una propiedad, de momento no voy a usar PartialTypes
 
 ~~~js
-import { PartialType } from '@nestjs/mapped-types';
+//import { PartialType } from '@nestjs/mapped-types';
 import { CreateBrandDto } from './create-brand.dto';
 import { IsString, MinLength } from 'class-validator';
 
@@ -78,7 +78,7 @@ export class UpdateBrandDto{
 ~~~
 
 - La lógica de actualización es la misma que con los coches
-- Para el delete uso .filter
+- Para el *delete* uso .filter
 
 ~~~js
 import { Injectable, NotFoundException } from '@nestjs/common';
@@ -186,14 +186,14 @@ export class BrandsController {
 
 ## Crear servicio SEED para cargar datos
 
-- Vamos a generar un SEED (semilla)
+- Vamos a generar un **SEED** (semilla)
 - Se usa para pre-cargar la data
 - Uso el CLI
 
 > nest g resource seed --no-spec
 
-- No voy a usar dtos ni entities. No uso los métodos del CRUD, solo necesito el GET, lo llamo runSeed
-- En el servicio borro todos los métodos, dejo un solo método para el GET, lo llamo populateDB
+- No voy a usar dtos ni entities. No uso los métodos del CRUD, solo necesito el **GET**, lo llamo *runSeed*
+- En el servicio borro todos los métodos, dejo un solo método para el GET, lo llamo *populateDB*
 - Cars es una propiedad privada en el servicio de cars. Para cargar la data voy a tener que exponerla con un método
 - Lo mismo con las brands
 - En seed creo una carpeta llamada data. Podría ser un json pero voy a usar TypeScript porque quiero una estructura específica de mi data
@@ -201,7 +201,6 @@ export class BrandsController {
 - En este caso la interfaz Car no necesito que esté importada en el módulo, pero hay cosas que si necesitan estar importadas
 - Si son interfaces o clases que no tienen dependencias o ninguna inyección, se pueden importar directamente
 - cars.seed.ts
-
 
 ~~~js
 import { Car } from "src/cars/interfaces/car.interface";
@@ -259,7 +258,7 @@ export const BRANDS_SEED: Brand[] = [
 ]
 ~~~
 
-- El servicio populateDB necesita trabajar mediante inyección de dependencias con los otros servicios
+- El método *populateDB* necesita trabajar mediante inyección de dependencias con los otros servicios
 - En este caso como trabajo con arreglos podría retornar los arreglos y ya está, pero no es el objetivo de la lección
 - Los servicios, como trabajan a través de inyección de dependencias con los controladores, **si debo declararlos en el módulo**
 - Además tengo que **poder acceder a la propiedad privada cars y a la propiedad privada brands para cargar la data**
@@ -405,8 +404,8 @@ export class BrandsService {
 
 ## Inyectar servicios en otros servicios
 
-- Para resolver la dependencia de SeedService CarsService y poder inyectarlo en el constructor tiene que ser parte del SeedModule
-- Debo exportarlo de CarsService e importarlo en SeedService
+- Para resolver la dependencia de **SeedService** *CarsService* y poder inyectarlo en el constructor tiene que ser parte del **SeedModule**
+- Debo exportarlo de *CarsService* e importarlo en *SeedService*
 - cars.module
 
 ~~~js
@@ -422,7 +421,7 @@ import { CarsService } from './cars.service';
 export class CarsModule {}
 ~~~
 
-- En *imports* importo los **módulos**. En este caso importo el CarsModule 
+- En *imports* importo los **módulos**. En este caso importo el *CarsModule* 
 - seed.module
 
 ~~~js
@@ -440,7 +439,7 @@ import { CarsModule } from 'src/cars/cars.module';
 export class SeedModule {}
 ~~~
 
-- Ahora puedo inyectar el servicio y llamar al método pasándole CARS_SEED
+- Ahora puedo inyectar el servicio y llamar al método pasándole *CARS_SEED*
 - seed.service
 
 ~~~js
@@ -477,7 +476,7 @@ http://localhost:3000/seed
 ```
 ~~~
 
-- Para ver el archivo abrir README.md y ctrl+shift+P Markdown: abrir vista previa en el lateral
+- Para ver el archivo abrir README.md y *ctrl+shift+P* Markdown: abrir vista previa en el lateral
 
 
 
