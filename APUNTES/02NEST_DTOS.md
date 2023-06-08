@@ -494,3 +494,5 @@ deleteCar(id: string){
     this.cars = this.cars.filter(car => car.id !== id)
 }
 ~~~
+
+- **En resumen**: a través de los dtos nos aseguramos de que la data venga como la necesito **usando los decoradores de class-validator**
