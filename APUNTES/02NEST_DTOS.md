@@ -187,6 +187,9 @@ createCar(@Body() createCarDto: CreateCarDto){
 - Todavía no estoy aplicando validaciones porque no las he especificado en el dto
 - Voy al dto y uso **decoradores**
 - Valido que sean strings
+- Debo instalar class-validator y class-transformer
+
+> npm i class-validator class-transformer
 
 ~~~js
 import { IsString } from "class-validator"
