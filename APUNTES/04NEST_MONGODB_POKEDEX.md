@@ -48,7 +48,7 @@ export class AppModule {}
 ~~~
 -----
 
-- En la creación de la API RESTnos vamos a basar en la API de Pokemon
+- En la creación de la API REST nos vamos a basar en la API de Pokemon
 ------
 
 ## Global Prefix
@@ -188,14 +188,14 @@ export class AppModule {}
 
 - Se recomienda que **la entidad sea una clase** para poder definir reglas de negocio
 - Cada registro en la DB de mi entidad será una nueva instancia de la clase
-- Voy a tener 3 identificadores únicos
+- Voy a tener **3 identificadores únicos**:
   - El nombre del pokemon
   - El número del pokemon
   - El mongoID (no lo tengo que especificar porque mongo me lo da automaticamente)
 - Mongoose se va a encargar de ponerle la "s" a la clase Pokemon(s)
-- Hago que la clase herede de Document de mongoose
+- Hago que la clase **herede de Document** de mongoose
 - Necesito especificarle un decorador para decir que es un esquema
-- Le añado unas propiedades con el decorador Props
+- Le añado unas propiedades con el **decorador Props**
 - Lo exporto
 
 ~~~js
@@ -469,9 +469,9 @@ if(!pokemon) throw new NotFoundException("Pokemon not found")
 ~~~
 
 - Para el mongoId tengo que balidar que sea un mongoId válido
-- Para ello tengo isValidObjectId de mongoose
+- Para ello tengo **isValidObjectId de mongoose**
 - Agrego la condición para que lo busque si no tengo un pokemon por id
-- Si no lo encuentra por id voy a intentar encontrarlo por el nombre. Uso .trim para eliminar posibles espacios en blanco
+- Si no lo encuentra por id voy a intentar encontrarlo por el nombre. Uso **.trim** para eliminar posibles espacios en blanco
 - Y si no lo encuentra lanza el error
 - Luego se optimizará este código
 - pokemon.service
@@ -549,7 +549,7 @@ async update(id: string, updatePokemonDto: UpdatePokemonDto) {
 ## Validar valores únicos
 
 - Meto la actualización en un try catch
-- En caso de que el error sea 11000 lanzo un BadRequestException
+- En caso de que el error sea 11000 lanzo un *BadRequestException*
 - Si no imprimo el error en un console.log para debuggear y lanzo un InternalError
 
 ~~~js
@@ -705,7 +705,8 @@ async remove(id: string) {
     - common.controller.ts
     - common.module.ts
     - common.service.ts
-- Voy a usar el **CLI** para generar un nuevo módulo
+- Voy a usar el **CLI** para generar un nuevo módulo llamado common
+- Por defecto viene sin servicio ni nada más que el .module
 
 > nest g mo common
 
@@ -731,7 +732,7 @@ export class ParseMongoIdPipe implements PipeTransform {
 }
 ~~~
 
-- Para poder obervar el console.log, uso el Pipe en el controlador del delete (borro el código del servicio y dejo solo un console.log del id)
+- Para poder obervar el *console.log* del **ParseMongoIdPipe** uso el Pipe en el controlador del delete (borro el código del servicio y dejo solo un *console.log* del id)
 - pokemon.service
 
 ~~~js
@@ -752,7 +753,7 @@ remove(@Param('id', ParseMongoIdPipe) id: string) {
 }
 ~~~
 
-- Hago una llamada al endpoint desde ThunderClient para observar el console.log del value y la metadata
+- Hago una llamada al endpoint desde ThunderClient para observar el *console.log* del value y la metadata
 - Como id en la url le paso un 1. Me devuelve esto por consola
 
 ~~~js
@@ -763,8 +764,8 @@ remove(@Param('id', ParseMongoIdPipe) id: string) {
 ~~~
 
 - Los Pipes transforman la data
-- Si coloco en el return value.toUpperCase() me devuelve el id en mayúsculas (al poner un string)
-- En consola me devolverá en minúsculas porque en el momento de hacer el console.log no le he aplicado el toUpperCase
+- Si coloco en el *return* value.toUpperCase() me devuelve el id en mayúsculas (al poner un string)
+- En consola me devolverá en minúsculas porque en el momento de hacer el *console.log* no le he aplicado el toUpperCase
 
 ~~~js
 import { ArgumentMetadata, Injectable, PipeTransform } from '@nestjs/common';
@@ -781,7 +782,7 @@ export class ParseMongoIdPipe implements PipeTransform {
 
 - Puedo usar la metadata para hacer validaciones
 - Uso el *isValidObjectId* de mongoose para hacer la validación
-- Si pasa la validación retorno el value ( que es el mongoId que he pasado por parámetro)
+- Si pasa la validación retorno el value (que es el mongoId que he pasado por parámetro)
 
 ~~~js
 import { ArgumentMetadata, Injectable, PipeTransform, BadRequestException } from '@nestjs/common';
@@ -826,8 +827,8 @@ async remove(id: string) {
   }
 ~~~
 
-- Esto me devuelve un valor "deletdCount" en 0 si no ha borrado ningún registro, y el acknowledged (boolean) si realizó el procedimiento
-- Puedo desestructurarlo de la llamada a la db
+- Esto me devuelve un valor **"deletedCount"** en 0 si no ha borrado ningún registro, y el acknowledged (boolean) si realizó el procedimiento
+- Puedo **desestructurarlo** de la llamada a la db
 
 ~~~js
 async remove(id: string) {
@@ -843,8 +844,8 @@ async remove(id: string) {
 ~~~
 
 - Podríamos envolver esta llamada de eliminación en un try catch
-- Más adelante se creará un ExceptionFilter para filtrar todos los endpoints
-- Falta el findAll, donde haremos paginación y búsqueda mediante expresiones regulares
+- Más adelante se creará un *ExceptionFilter* para filtrar todos los endpoints
+- Falta el *findAll*, donde haremos paginación y búsqueda mediante expresiones regulares
 - También haremos el SEED, sacaremos la data de PokeAPI
 
 > https://pokeapi.co/api/v2/pokemon?limit=500
