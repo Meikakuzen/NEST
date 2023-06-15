@@ -353,4 +353,258 @@ http://localhost:3000/api/v2/seed
 
 ## Crear un custom Provider (patrón adaptador)  
 
-- 
+- Queremos que el cambio sea lo más indoloro posible
+- Voy a crear un adaptador que va **a envolver axios**, para que en lugar de tener código de terceros incrustado en mi app, tenga el mio
+- Quiero sacar esa instancia de axios y crearme **mi propia implementación de una clase**
+- Lo creo dentro de *common*
+- Va a ser un provider (porque va a poder inyectarse)
+- Los **providers** tienen que estar **definidos en el módulo**
+- En common creo la carpeta interface y otra llamada adapters
+- En interfaces voy a crear http-adapter.interface.ts
+- La clase que implemente esta interfaz va a tener el método get que devuelve una promesa de tipo genérico
+- El método get está esperando o puede recibir un genérico. **Que la respuesta es de este tipo de dato**
+
+~~~js
+export interface HttpAdapter{
+    get<T>(url: string): Promise<T>
+}
+~~~
+
+- En adapters creo axios.adapter.ts
+- Esta clase va aenvolver mi código, para que si tengo que cambiar la implementación sólo tenga que cambiar la clase
+- Implemento la interfaz. La clase debe tener el método get
+- Creo la instancia de axios
+- Meto en un try y un catch el get y desestructuro la data. La retorno
+- Lanzo un error en el catch
+- Debo añadirle el operador **@Injectable** para poder inyectarlo
+
+~~~js
+import axios, { AxiosInstance } from "axios";
+import { HttpAdapter } from "../interfaces/http-adapter.interface";
+import {Injectable} from '@nestjs/common'
+
+
+@Injectable()
+export class AxiosAdapter implements HttpAdapter{
+
+    private axios: AxiosInstance = axios
+
+    async get<T>(url: string): Promise<T> {
+        try {
+            const {data}=  await this.axios.get<T>(url)
+            return data
+
+        } catch (error) {
+            throw new Error('This is an error - Check Logs')
+        }
+    }
+}
+~~~
+
+- Los providers están a nivel de módulo. Para que sea visible por otros módulos **tengo que exportarlo**
+- Lo hago dentro del decorador **@Module({})**
+
+~~~js
+import { Module } from '@nestjs/common';
+import { AxiosAdapter } from './adapters/axios.adapter';
+
+@Module({
+    providers:[AxiosAdapter],
+    exports:[AxiosAdapter]
+})
+export class CommonModule {}
+~~~
+
+- Importo el CommonModule en el módulo de seed
+- seed.module
+  
+~~~js
+import { Module } from '@nestjs/common';
+import { SeedService } from './seed.service';
+import { SeedController } from './seed.controller';
+import { PokemonModule } from 'src/pokemon/pokemon.module';
+import { CommonModule } from 'src/common/common.module';
+
+@Module({
+  imports:[PokemonModule, CommonModule],
+  controllers: [SeedController],
+  providers: [SeedService]
+})
+export class SeedModule {}
+~~~
+
+- Ya puedo usar este AxiosAdapter!
+- Lo inyecto en el servicio de seed
+- No hace falta que desestructure la data porque ya lo he hecho en el adaptador
+- Si quiero la respuesta entera de axios lo guardo en una variable en lugar de desestruturarla
+
+~~~js
+import { Injectable } from '@nestjs/common';
+
+import { PokeResponse } from './interfaces/poke-response.interface';
+import { Model } from 'mongoose';
+import { Pokemon } from 'src/pokemon/entities/pokemon.entity';
+import { InjectModel } from '@nestjs/mongoose';
+import { AxiosAdapter } from 'src/common/adapters/axios.adapter';
+
+
+@Injectable()
+export class SeedService {
+
+  constructor(
+    @InjectModel(Pokemon.name)
+    private readonly pokemonModel: Model<Pokemon>,
+    //inyecto el adaptador
+    private readonly http: AxiosAdapter
+    ){}
+
+  
+
+  async executeSEED() {
+
+   await this.pokemonModel.deleteMany({})
+   
+   //guardo la data del método get
+   const data = await this.http.get<PokeResponse>("https://pokeapi.co/api/v2/pokemon?limit=500")
+
+   const pokemonToInsert: {name: string, no:number}[] = []
+
+   data.results.forEach(async ({name, url})=>{
+      const segments = url.split('/')
+      const no: number = +segments[segments.length -2] 
+      
+    pokemonToInsert.push({name, no})
+   })
+
+   await this.pokemonModel.insertMany(pokemonToInsert)
+
+    return 'Seed Executed';
+  }
+}
+~~~
+
+- Si ahora quisiera usar otro adaptador, debería crearlo, hacer que implemente la interfaz, hacer el export correspondiente e inyectarlo
+----
+
+## Paginación Pokemons
+
+- Mediante query parameters puedo indicarle cuántos pokemons quiero por página
+- Implementaremos el offset (los siguientes x) y el limit (x pokemons)
+- Para que me traiga 2 pokemons de los siguientes 20
+
+> https://pokeapi.co/api/v2/pokemon?offset=20&limit=2
+
+- Si quiero solo 5 pokemons de los siguientes 5 lo haría asi
+- pokemon.service
+
+~~~js
+async findAll() {
+    return await this.pokemonModel.find()
+    .limit(5)
+    .skip(5) ;
+  }
+~~~
+
+- Entonces lo que necesito es extraer los query parameters de la url
+- Vamos a necesitar un nuevo dto, para implementar algunas reglas como que tiene que ser un número, tiene que ser positivo...
+- Obtengo los query parameters mediante el decorador **@Query()**
+- pokemon.controller
+
+~~~js
+  @Get()
+  findAll(@Query() paginationDto: PaginationDto) {
+    return this.pokemonService.findAll(paginationDto);  //le paso el Dto al servicio para trabajar con la paginación
+  }
+~~~
+
+- Creo el dto. Tiene más sentido crearlo en la carpeta **common** ya que es un dto muy genérico y puedo querer usarlo en otros lugares
+
+~~~js
+import { IsOptional, IsPositive, Min, IsNumber } from "class-validator"
+
+export class PaginationDto{
+
+    @IsPositive()
+    @IsOptional()
+    @IsNumber()
+    @Min(1)
+    limit?: number  //le añado ? para que TypeScript lo considere opcional
+
+    @IsPositive()
+    @IsOptional()
+    @IsNumber()
+    offset?: number
+}
+~~~
+
+
+- Ahora falta parsear el query parameter que me llega cómo un string a número y acabar la paginación
+----
+
+## Transform Dtos
+
+- Los query parameters, el body... todo va **como string**
+- Puedo hacer la transformación **de manera global en el main**
+- Dentro del ValidationPipe, le pongo el **transform** en true. También añado **enableImplicitConversion**
+
+~~~js
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  app.setGlobalPrefix('api/v2')
+  
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+
+      //añado transform y enableImplicitConversion
+      transform: true,
+      transformOptions:{
+        enableImplicitConversion: true
+      }
+    })
+  )
+
+  await app.listen(3000);
+}
+bootstrap();
+~~~
+
+- Desarrollo la lógica en el servicio
+- Desestructuro **limit y offset** que vienen en el dto y les asigno **un valor por defecto** por si no vienen
+- Los agrego a los métodos
+
+~~~js
+async findAll(paginationDto: PaginationDto) {
+  
+  const {limit=10, offset=0}= paginationDto
+  
+  return await this.pokemonModel.find()
+  .limit(limit)
+  .skip(offset) ;
+}
+~~~
+
+- Para ordenarlos alfabéticamente puedo usar el método **sort**
+- Le digo que ordene la columna no de manera ascendente
+- Puedo hacer el select de las columnas y restarle el __v para que no lo muestre
+
+~~~js
+async findAll(paginationDto: PaginationDto) {
+    
+    const {limit=10, offset=0}= paginationDto
+    
+    return await this.pokemonModel.find()
+    .limit(limit)
+    .skip(offset)
+    .sort({
+      no:1 //le digo que ordene la columna numero de manera ascendente
+    })
+    .select('__v') ;
+  }
+~~~
