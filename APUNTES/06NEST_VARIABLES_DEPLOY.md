@@ -429,4 +429,186 @@ bootstrap();
 
 ## Joi ValidationSchema
 
-- 
+- Cuando queremos ser más estrictos y que lance errores en el caso de que un tipo de dato no venga o no sea el esperado podemos usar joi
+
+> npm i joi
+
+- Creo en src/config/joi.validation.ts
+- Debo importarlo de esta manera porque solo importando joi no funciona
+
+```
+import * as Joi from 'joi'
+```
+- Básicamente quiero crear un Validation Schema
+
+~~~js
+import * as Joi from 'joi'
+
+
+export const joiValidationSchema = Joi.object({
+    MONGODB: Joi.required(), 
+    PORT: Joi.number().default(3005), //le establezco el puerto 3005 por defecto
+    DEFAULT_LIMIT: Joi.number().default(5)
+})
+~~~
+
+- **Dónde uso este joiValidationSchema?**
+- El ConfigurationLoader puede trabajar de la mano de joi
+- En ConfigModule (en app.module)
+
+~~~js
+import { join } from 'path';
+import { Module } from '@nestjs/common';
+import {ServeStaticModule} from '@nestjs/serve-static'
+import { PokemonModule } from './pokemon/pokemon.module';
+import { MongooseModule } from '@nestjs/mongoose';
+import { CommonModule } from './common/common.module';
+import { SeedModule } from './seed/seed.module';
+import { ConfigModule } from '@nestjs/config';
+import { EnvConfiguration } from './config/app.config';
+import { joiValidationSchema } from './config/joi.validation';
+
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      load: [EnvConfiguration],
+      validationSchema: joiValidationSchema
+    }),
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'public')
+    }),
+    MongooseModule.forRoot(process.env.MONGODB),
+    PokemonModule,
+    CommonModule,
+    SeedModule
+  ]
+})
+export class AppModule {}
+~~~
+
+- Pueden trabajar **conjuntamente** el EnvConfiguration con joinValidationSchema
+- Prevalece el joinValidationSchema sobre EnvConfiguration. Es decir:
+  - Si le doy un valor por default al Schema y pongamos que no viene la variable de entorno, este la setea y para cuando llega a EnvConfiguration, ya esta seteada por el Schema
+- Esto hace que trabaje la variable de entorno **como string** (porque está seteada en process.env.VARIABLE) y las variables de entorno **siempre son strings**
+- Por ello parseo (por si acaso) la variable
+
+~~~js
+export const EnvConfiguration = ()=>({
+    environment: process.env.NODE_ENV || 'dev',
+    mongodb: process.env.MONGODB,
+    port: +process.env.PORT || 3001, 
+    defaultLimit: +process.env.DEFAULT_LIMIT || 5
+})
+~~~
+-----
+
+## ENV Template README
+
+- Se aconseja que si la app tiene variables de entorno no le dejemos todo el trabajo al nuevo desarrollador o que las adivine
+- Debo especificar las variables de entorno necesarias
+- Copio el .env a .env.template
+- Si hubiera cosas como el SECRET_KEY no lo llenaríamos, solo dejaríamos la definición
+- El .env.template si va a estar en el repositorio
+- Lo describo en el README. Añado los pasos 5,6,7
+
+~~~md
+<p align="center">
+  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
+</p>
+
+# Ejecutar en desarrollo
+
+1. Clonar el repositorio
+2. Ejecutar 
+```
+npm i
+```
+
+3. Tener el Nest CLI instalado
+```
+npm i -g @nestjs/cli
+```
+4. Levantar la base de datos
+```
+docker-compose up -d
+```
+5. Clonar el archivo .env.template y renombrar la copia a .env
+
+6. LLenar las variables de entorno definidas en el .env
+
+7. Ejecutar la app en dev:
+```
+npm run start:dev
+```  
+
+8. Reconstruir la base de datos con la semilla
+```
+http://localhost:3000/api/v2/seed
+```
+
+## Stack Usado
+
+- MongoDB
+- Nest
+~~~
+
+- **NOTA**: Para desplegar la aplicación crear la base de datos en MongoDBAtlas. Cambiar la cadena de conexión en .env y en TablePlus. Para desplegar ejecutar el script build. Después la app se ejecuta con start:prod. Así lo ejecuta ya como javascript
+- Plataformas como Heroku ejecutan **directamente el comando build y luego el start**
+- Por ello cambio los archivos start así
+
+~~~js
+"start": "node dist/main",
+"start:prod": "nest start"
+~~~
+
+- Debo asegurarme de que el puerto sea process.env.PORT para que le asigne el 3000
+-  Ingreso en Heroku
+-  Hago click en New (crear nueva app)
+-  Le pongo el nombre, el País
+-  La manera más fácil de subir el código es usar Heroku Git
+-  Para ello debo usar el Heroku CLI (busco la instalación en la web)
+- Para saber la versión:
+
+> heroku -v
+
+- me situo en la carpeta de proyecto en la terminal
+
+> heroku login
+
+- Para subir el código escribo esta linea con el nombre que le puse a la app de heroku
+- Debo haber hecho git init, con el último commit y estar en la carpeta de proyecto
+
+> heroku git:remote -a pokedex-migue
+
+> git add .
+> git commit -am "commit a heroku"
+> git push heroku main
+
+- A veces da error el package-lock.json (colócalo en el .gitignore!)
+- Para ver los logs (y los posibles errores)
+
+> heroku logs --tail
+
+- En Heroku logeado, en el proyecto, Settings, Reveal Config Varsç
+- Aquí puedo setear las variables de entorno
+- Ahora puedo hacer una petición al endpoint que me dio heroku, por ejemplo un GET
+
+> https://pokedex-migue.herokuapp.com/api/v2/pokemon
+
+- Debo hacer el seed para llenar la db de MongoDBAtlas de data!!!
+- Si hago algún cambio, puedo hacer otra vez el proceso de git add .
+- Si quiero hacer un redespliegue sin ninguna modificación
+
+> git commit --allow-empty -m "Heroku redeploy"
+> git push heroku main
+
+- Es main o master, se recomienda cambiar la branch master a main
+-----
+
+## Dockerizar la app
+
+
+
+
+
