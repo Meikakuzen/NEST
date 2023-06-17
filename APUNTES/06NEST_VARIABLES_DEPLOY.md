@@ -606,7 +606,6 @@ http://localhost:3000/api/v2/seed
 - Es main o master, se recomienda cambiar la branch master a main
 -----
 
-## Dockerizar la app
 
 
 
