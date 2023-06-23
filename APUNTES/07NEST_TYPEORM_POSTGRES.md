@@ -440,6 +440,564 @@ export class ProductsService {
 - Vamos a aprender a ejecutar procedimientos antes de la inserción, por ejemplo para evaluar si viene el slug y si no viene generarlo
 -------
 
-## Manejo de errores
+## Manejo de errores (LOGGER)
+
+- Hay una serie de condiciones que hay que evaluar. Que el título esté bien, el slug, etc
+- Si hiciera la verificación a través de la db para saber si ya hay un título, etc serían muchas consultas a la db
+- Para mejorar el console.log del error puedo usar lo que **incorpora Nest**.
+- Creo una propiedad privada readonly logger e importo Logger de @nestjs/common
+- Cuando abro paréntesis puedo ver las varias opciones que le puedo pasar a la instancia
+- Una de ellas es **context:string**. Puedo ponerle **el nombre de la clase** en la que estoy usando este logger
+- En lugar del console.log(error) uso **this.logger.error**
+
+~~~js
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Product } from './entities/product.entity';
+import { Repository } from 'typeorm';
+
+@Injectable()
+export class ProductsService {
+
+  private readonly logger = new Logger('ProductsService')
+  
+  constructor(
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product> ){}
+
+
+  async create(createProductDto: CreateProductDto) {
+    try {
+      const product = this.productRepository.create(createProductDto)
+
+      await this.productRepository.save(product)
+
+      return product
+      
+    } catch (error) {
+      
+      this.logger.error(error)
+      throw new InternalServerErrorException('Ayuda!')
+    }
+
+  }
+}
+~~~
+
+- Ahora en la consola tengo un error más específico si intento insertar el mismo título
+- Puedo ser más específico. Si hago un console.log(error) obtengo el código del error y los detalles
+- Si no es este error concreto puedo mandar el logger para ver que ocurre y lanzar la excepción
+
+~~~js
+async create(createProductDto: CreateProductDto) {
+  try {
+    const product = this.productRepository.create(createProductDto)
+
+    await this.productRepository.save(product)
+
+    return product
+    
+  } catch (error) {
+
+    if(error.code === '23505')
+      throw new BadRequestException(error.detail)
+    
+    this.logger.error(error)
+    throw new InternalServerErrorException('Unexpected error, check Server logs')
+  }
+~~~
+
+- Este tipo de error es algo que voy a necesitar en varios lugares. 
+- Puedo crear un método privado para ello
+
+~~~js
+private handleDBExceptions(error: any){
+  if(error.code === '23505')
+  throw new BadRequestException(error.detail)
+
+  this.logger.error(error)
+  throw new InternalServerErrorException('Unexpected error, check Server logs')
+}
+~~~
+-------
+
+## BeforeInsert y BeforeUpdate
+
+- Si no mando el **slug** me da un error de db porque **es requerido**, en la entity no tiene el nullable en true
+- Pero **en el dto lo tengo como opcional**
+- Yo lo puedo generar basado en el titulo
+- Para que no me de error con replaceAll debo cambiar el target a es2021 en el tsconfig
+- Reemplazo espacios por guiones bajos y apostrofes por string vacío(no lo voy a colocar)
+  - Si viene el slug tengo que quitar esas cosas
+
+~~~js
+async create(createProductDto: CreateProductDto) {
+    try {
+      
+      if(!createProductDto.slug){
+        createProductDto.slug = createProductDto.title.toLowerCase().replaceAll(' ', '_').replaceAll("'", "")
+      }else{
+        createProductDto.slug = createProductDto.slug.toLowerCase().replaceAll(' ', '_').replaceAll("'", "")
+      }
+
+      const product = this.productRepository.create(createProductDto)
+
+      await this.productRepository.save(product)
+
+      return product
+      
+    } catch (error) {
+
+      this.handleDBExceptions(error)
+    }
+
+  }
+~~~
+
+- Puedo crear este procedimiento antes de que se inserte en la db
+- products.entity
+
+~~~js
+import {Entity, PrimaryGeneratedColumn, Column, BeforeInsert} from 'typeorm'
+
+@Entity()
+export class Product {
+    @PrimaryGeneratedColumn('uuid')
+    id: string
+
+    @Column('text', {
+        unique: true
+    })
+    title: string
+
+    @Column('float',{
+        default: 0
+    })
+    price: number
+
+    @Column({
+        type: 'text',
+        nullable: true
+    })
+    description: string
+
+    @Column({
+        type: 'text',
+        unique: true
+    })
+    slug: string
+
+    @Column({
+        type: 'int',
+        default: 0
+    })
+    stock: number
+
+    @Column({
+        type: 'text',
+        array: true
+    })
+    sizes: string[]
+
+    @Column({
+        type: 'text',
+    })
+    gender: string
+
+    @BeforeInsert()
+    checkSlugInsert(){
+        if(!this.slug){
+            this.slug = this.title  //si no viene el slug guardo el titulo en el slug
+        }
+            
+        this.slug = this.slug //en este punto ya tengo el slug, lo formateo
+        .toLowerCase()
+        .replaceAll(' ', '_')
+        .replaceAll("'", "")        
+    }
+}
+~~~
+-----
+
+## Get y Delete TypeORM (CRUD BÁSICO)
+
+- En el controller hago uso del *ParseUUIDPipe* en el findOne y el remove
+- Hago uso del repositorio en el servicio
+- Extraigo el producto de la db y compruebo de que el producto exista
+- En el delete puedo usar el método findOne dónde ya hago la validación
+
+~~~js
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Product } from './entities/product.entity';
+import { Repository } from 'typeorm';
+
+@Injectable()
+export class ProductsService {
+
+  private readonly logger = new Logger('ProductsService')
+  
+  constructor(
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product> ){}
+
+
+  async create(createProductDto: CreateProductDto) {
+    try {
+      const product = this.productRepository.create(createProductDto)
+
+      await this.productRepository.save(product)
+
+      return product
+      
+    } catch (error) {
+
+      this.handleDBExceptions(error)
+    }
+  }
+
+  async findAll() {
+    return await this.productRepository.find();
+  }
+
+  async findOne(id: string) {
+    const product = await this.productRepository.findOneBy({id})
+    if(!product) throw new NotFoundException('Product not found')
+    return product
+  }
+
+  update(id: number, updateProductDto: UpdateProductDto) {
+    return `This action updates a #${id} product`;
+  }
+
+  async remove(id: string) {
+
+    const product = await this.findOne(id)
+
+    await this.productRepository.delete(id)
+  }
+
+  private handleDBExceptions(error: any){
+    if(error.code === '23505')
+    throw new BadRequestException(error.detail)
+  
+    this.logger.error(error)
+    throw new InternalServerErrorException('Unexpected error, check Server logs')
+  }
+}
+~~~
+-----
+
+## Paginar en TypeORM
+
+- Creo un dto relacionado a la paginación
+- No está directamente relacionado a los productos, por lo que lo **creo el módulo common** y dentro creo la carpeta dto
+
+> nest g mo common
+
+- Esto importa directamente en app.module, que es el módulo principal
+- Le añado las propiedades a la clase PaginationDto y las decoro
+- Para transformar la data, en el proyecto anterior se configuró en el app.useGlobalPipes, dentro del new ValidationPipe
+  - transform: true
+  - transformOptions: { enableImplicitConversion: true}
+- Se puede hacer de esta otra forma, usando **@Type** de *class-transform*
+- Cuando pongo **@IsPositive** no es necesario el @IsNumber
+
+~~~js
+import { Type } from "class-transformer"
+import { IsOptional, IsPositive, Min } from "class-validator"
+
+export class PaginationDto{
+
+    @IsOptional()
+    @IsPositive()
+    @Type(()=> Number)
+    limit?: number
+
+    @IsOptional()
+    @Min(0)
+    @Type(()=> Number)
+    offset?: number
+}
+~~~
+
+- En el controller hago uso del dto
+
+~~~js
+  @Get()
+  findAll(@Query() paginationDto: PaginationDto) {
+    return this.productsService.findAll(paginationDto);
+  }
+~~~
+
+- En el service hago la paginación
+- Extraigo los valores del dto y les doy un valor por defecto
+
+~~~js
+ async findAll(paginationDto:PaginationDto) {
+    
+    const {limit=10, offset= 0} = paginationDto
+    
+    return await this.productRepository.find({
+      take: limit,
+      skip: offset
+      //TODO: relaciones
+    })
+  }
+~~~
+------
+
+## Buscar por slug, título o UUID
+
+- El slug me permite hacer urls friendly
+- Yo puedo querer buscar por el slug
+- Se podría crear otro endpoint para buscar por el slug pero lo vamos a hacer en el mismo
+- En el controller quito el ParseUUIDPipe y cambio id por term, que es más adecuado
+- En el service:
+  - Necesito instalar uuid para verificar si es un uuid o no. Instalo los tipos también con @types/uuid
+  - Importo validate de uuid y lo renombro a isUUID
+  - Hago la validación
+  - Si solo buscáramos por uuid o slug lo soluciono con un else
+
+~~~js
+async findOne(term: string) {
+
+    let product: Product
+
+    if(isUUID(term)){
+      product = await this.productRepository.findOneBy({id: term})
+    }else{
+      product = await this.productRepository.findOneBy({slug: term})
+    }
+
+
+    if(!product) throw new NotFoundException('Product not found')
+    return product
+  }
+~~~
+
+- Pero quiero también buscar por título. Para eso es el **QueryBuilder**
+-----
+
+## QueryBuilder
+
+- La consulta se podría hacer con el find y el WHERE, pero aprendamos que es el **queryBuilder**
+- TypeORM añade una capa de seguridad que escapa los caracteres especiales para evitar inyección de SQL
+- Los : significa que son parámetros, se los paso como segundo argumento
+- Solo me interesa uno de los dos(porque podría ser que regrese dos si slug y titulo están ubicados en sitios diferentes), por eso uso getOne()
+
+~~~js
+async findOne(term: string) {
+
+  let product: Product
+
+  if(isUUID(term)){
+    product = await this.productRepository.findOneBy({id: term})
+  }else{
+    const queryBuilder = this.productRepository.createQueryBuilder()
+
+    product = await queryBuilder.where(`title = :title or slug = :slug`, {
+      title: term,
+      slug: term
+    }).getOne()
+  }
+
+  if(!product) throw new NotFoundException('Product not found')
+  return product
+}
+~~~
+
+- El queryBuilder **te permite escribir tus queries** cubriéndote el tema de la seguridad por inyección de SQL
+- El queryBuilder es case sensitive. Para evitarlo puedo usar UPPER en el querie y luego pasar el término a mayusculas con toUpperCAse
+- El slug lo estoy guardando con toLowerCase con lo que lo uso con el term
+
+~~~js
+async findOne(term: string) {
+
+  let product: Product
+
+  if(isUUID(term)){
+    product = await this.productRepository.findOneBy({id: term})
+  }else{
+    const queryBuilder = this.productRepository.createQueryBuilder()
+
+    product = await queryBuilder.where(`UPPER(title) = :title or slug = :slug`, {
+      title: term.toUpperCase(),
+      slug: term.toLowerCase()
+    }).getOne()
+  }
+
+  if(!product) throw new NotFoundException('Product not found')
+  return product
+}
+~~~
+-----
+
+## Update en TypeORM
+
+- Todos los campos son opcionales, pero hay ciertas restricciones. La data tiene que lucir como yo estoy esperando
+- Cuando solo hay una tabla involucrada la actualización es sencilla
+- En el dto del update uso PartialType que hace las propiedades del dto de create opcionales
+- Vamos a hacer que para actualizar siempre vamos a usar un UUID
+- Uso el ParseUUIDPipe en el controller, el id es un string
+
+~~~js
+@Patch(':id')
+update(@Param('id', ParseUUIDPipe) id: string, @Body() updateProductDto: UpdateProductDto) {
+  return this.productsService.update(id, updateProductDto);
+}
+~~~
+
+- En el servicio
+- Con el preload le digo que busque un producto por el id, y que cargue usando el spread toda la data de las propiedades del dto 
+- Si no existe el prodcuto lanzo un error
+- Guardo el producto actualizado
+
+~~~js
+async update(id: string, updateProductDto: UpdateProductDto) {
+    const product = await this.productRepository.preload({
+      id,
+      ...updateProductDto
+    })
+
+    if(!product) throw new NotFoundException('Product not found')
+
+    await this.productRepository.save(product)
+
+    return product
+  }
+~~~
+
+- Si le paso un título que ya existe me va a devolver un InternalServerError
+- Puedo colocar el .save dentro de un try catch para capturar el error y lanzar una excepción
+
+~~~js
+async update(id: string, updateProductDto: UpdateProductDto) {
+  const product = await this.productRepository.preload({
+    id,
+    ...updateProductDto
+  })
+
+  if(!product) throw new NotFoundException('Product not found')
+
+  try {
+    await this.productRepository.save(product)
+    return product
+  } catch (error) {
+    this.handleDBExceptions(error)
+  }
+}
+~~~
+
+- Los slugs los tengo que validar. Si viene el slug, tiene que cumplir las condiciones que anteriormente establecí
+- Para ello usaré **BeforeUpdate**
+-------
+
+## BeforeUpdate
+
+- Uso **@BeforeUpdate** en la entity
+
+~~~js
+import {Entity, PrimaryGeneratedColumn, Column, BeforeInsert, BeforeUpdate} from 'typeorm'
+
+@Entity()
+export class Product {
+    @PrimaryGeneratedColumn('uuid')
+    id: string
+
+    @Column('text', {
+        unique: true
+    })
+    title: string
+
+    @Column('float',{
+        default: 0
+    })
+    price: number
+
+    @Column({
+        type: 'text',
+        nullable: true
+    })
+    description: string
+
+    @Column({
+        type: 'text',
+        unique: true
+    })
+    slug: string
+
+    @Column({
+        type: 'int',
+        default: 0
+    })
+    stock: number
+
+    @Column({
+        type: 'text',
+        array: true
+    })
+    sizes: string[]
+
+    @Column({
+        type: 'text',
+    })
+    gender: string
+
+    @BeforeInsert()
+    checkSlugInsert(){
+        if(!this.slug){
+            this.slug = this.title 
+        }
+            
+        this.slug = this.slug
+        .toLowerCase()
+        .replaceAll(' ', '_')
+        .replaceAll("'", "")    
+    }
+
+    @BeforeUpdate()
+    checkSlugUpdate(){
+        this.slug = this.slug
+        .toLowerCase()
+        .replaceAll(' ', '_')
+        .replaceAll("'", "")  
+    }
+}
+~~~
+-----
+
+## Tags
+
+- Puedo usar tags para mejorar las búsquedas
+- Es una nueva columna en mi entity
+- Los tags siempre los voy a pedir. Por defecto será un array de strings
+- Le añado por defecto un array vacío
+- Como tengo el synchronize en true la añade directamente
+- entity
+
+~~~js
+@Column({
+    type: 'text',
+    array: true,
+    default: []
+})
+tags: string[]
+~~~
+
+- Hay que enviar los tags en la creación y la actualización como un arreglo
+- Para ello actualizo mi Dto
+- Como por defecto le mando un arreglo vacío puedo decir que isOptional
+
+~~~js
+@IsString({each:true})
+@IsArray()
+@IsOptional()
+tags?: string[]
+~~~
 
 - 
