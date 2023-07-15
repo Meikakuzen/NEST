@@ -5,7 +5,8 @@ import { User } from './entities/user.entity';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt'
 import { LoginUserDto } from './dto/login-user.dto';
-import { NotFoundError } from 'rxjs';
+import { JwtPayloadInterface } from './interfaces/jwt-payload.interface';
+import { JwtService } from '@nestjs/jwt';
 
 
 @Injectable()
@@ -13,7 +14,9 @@ export class AuthService {
 
   constructor(
     @InjectRepository(User)
-    private readonly userRepository: Repository<User>
+    private readonly userRepository: Repository<User>,
+
+    private readonly jwtService: JwtService
   ){}
 
   async create(createUserDto: CreateUserDto) {
@@ -31,8 +34,10 @@ export class AuthService {
     
      delete user.password
 
-     return user
-     //TODO: retornar JWT de acceso
+     return {
+      ...user,
+      token: this.getJwt({id: user.id})
+    }
 
     } catch (error) {
       this.handleDBErrors(error)
@@ -45,7 +50,7 @@ export class AuthService {
 
     const user = await this.userRepository.findOne({
       where: {email},
-      select: {email: true, password: true}
+      select: {email: true, password: true, id: true}
     })
 
     if(!user){
@@ -56,9 +61,19 @@ export class AuthService {
       throw new UnauthorizedException('Password incorrect')
     }
 
-    return user
-    //TODO: retornar JWT
+    return {
+      ...user,
+      token: this.getJwt({id: user.id})
+    }
+    
   }
+
+  //generar JWT
+  private getJwt(payload: JwtPayloadInterface){
+      const token = this.jwtService.sign(payload)
+      return token
+  }
+
 
   private handleDBErrors(error: any):void{
     if(error.code === '23505'){

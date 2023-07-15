@@ -702,4 +702,780 @@ export class AuthModule {}
 
 ## Generar un JWT
 
+- Como voy a crear un jwt en varios lugares voya crear un método en auth.service.ts
+- Debo recibir **el payload** con la **info** que quiero en el jwt del tipo **JetPayloadInterface**
+- Para generar el token necesito usar el servicio de jwt de nest, hago la inyección de dependencias
+- Este servicio lo proporciona el JwtModule
+- Uso el servicio con el método sign. Aquí podría pasarkle parámetros pero si no queda por defecto como definí en el módulo
+- Esparzo con el spread mi user en el return, y añado el token
+  - Si coloco directamente donde el payload user.email se me queja porque un string no cumple con el objeto de jwtPayloadInterface, así que lo meto como un objeto *{token: user.email}*
+  - Hago lo mismo en el login
+~~~js
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { CreateUserDto } from './dto/create-user.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { User } from './entities/user.entity';
+import { Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt'
+import { LoginUserDto } from './dto/login-user.dto';
+import { NotFoundError } from 'rxjs';
+import { JwtPayloadInterface } from './interfaces/jwt-payload.interface';
+import { JwtService } from '@nestjs/jwt';
+
+
+@Injectable()
+export class AuthService {
+
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+
+    private readonly jwtService: JwtService
+  ){}
+
+  async create(createUserDto: CreateUserDto) {
+
+    try {
+     
+    const {password, ...userData} = createUserDto
+    
+    const user=  this.userRepository.create({
+      ...userData, 
+      password: bcrypt.hashSync(password, 12)
+      })
+      
+     await this.userRepository.save(user)
+    
+     delete user.password
+
+       return {
+      ...user,                              
+      token: this.getJwt({email: user.email})
+    }
+
+    } catch (error) {
+      this.handleDBErrors(error)
+    }
+  }
+
+  async login(loginUserDto: LoginUserDto){
+
+    const {email, password} = loginUserDto
+
+    const user = await this.userRepository.findOne({
+      where: {email},
+      select: {email: true, password: true}
+    })
+
+    if(!user){
+      throw new UnauthorizedException('Credenciales no válidas (email)')
+    }
+
+    if(!bcrypt.compareSync(password, user.password)){
+      throw new UnauthorizedException('Password incorrect')
+    }
+
+       return {
+      ...user,
+      token: this.getJwt({email: user.email})
+    }
+  }
+
+  //generar JWT
+  private getJwt(payload: JwtPayloadInterface){
+      const token = this.jwtService.sign(payload)
+      return token
+  }
+
+
+  private handleDBErrors(error: any):void{
+    if(error.code === '23505'){
+      throw new BadRequestException(error.detail)
+    }
+    console.log(error)
+
+    throw new InternalServerErrorException("Check logs")
+  }
+}
+~~~
+
+- Voy al login y coloco usuario y contraseña correctos, en consola me devuelve email, password y el token!
+- Quiero guardar todo en minúsculas
+- Lo hago en la entidad directamente con **@BeforeInsert**
+- Como en el **@BeforeUpdate** es el mismo código llamo al método anterior
+
+~~~js
+import { BeforeInsert, BeforeUpdate, Column, Entity, PrimaryGeneratedColumn, Unique } from "typeorm";
+
+@Entity('users')
+export class User{
+
+    @PrimaryGeneratedColumn('uuid')
+    id: string
+
+    @Column('text',{
+        unique: true
+    })
+    email: string
+
+    
+    @Column('text',{
+        select: false
+    })
+    password: string
+
+    @Column('text')
+    fullName: string
+
+    @Column('bool',{
+        default: true
+    })
+    isActive: boolean
+
+    @Column('text',{
+        array: true,
+        default:['user']
+    })
+    roles: string[]
+
+    @BeforeInsert()
+    checkFieldsBeforeInsert(){
+        this.email = this.email.toLowerCase().trim()
+    }
+
+    @BeforeUpdate()
+    checkFieldsBeforeUpdate(){
+        this.checkFieldsBeforeInsert()
+    }
+}
+~~~
+-------
+
+## Priovate Route - General
+
+- Creo mi primera ruta privada que su único objetivo va a asegurar de que hay un jwt, que el usuario esté activo y el token no haya expirado (más adelante se evaluará tambien el rol)
+- Voy a usar Get y la llamaré testingPrivateRoute
+- auth.controller
+
+~~~js
+  @Get('private')
+  testingPrivateRoute(){
+    return {
+      ok: true
+    }
+  }
+~~~
+
+- Los **Guards** son usados para permitir o prevenir el acceso a una ruta
+- **Es dónde se debe de autorizar una solicitud**
+- Autenticación y autorización **no son lo mismo**
+- Autenticado es cuando el usuario está validado y autorizado es que tiene permiso para acceder
+- Para usar el **guard** uso el decorador **@UseGuards** de @nestjs/common (por el momento, se hará un guard personalizado)
+- Uso AuthGuard de @nestjs/passport, que usa la estrategia que yo definí por defecto, la configuración que definí, etc 
+- Para probarlo en Postman/ThunderClient debo añadir el token proporcionado en el login en Auth donde dice Bearer
+- Si le cambio el isActive a **FALSE** y le paso el token adecuado, me devuelve un error controlado diciendo que no estoy autorizado porque mi usuario está inactivo
+- **Pero de dónde sale eso?**
+- Recuerda que en la estrategia, en el validate hago la verificación
+- Es la estrategia que está usando por defecto el **Guard**
+
+~~~js
+import {PassportStrategy} from '@nestjs/passport'
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { User } from '../entities/user.entity';
+import { JwtPayloadInterface } from '../interfaces/jwt-payload.interface';
+import { Repository} from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
+import {UnauthorizedException, Injectable} from '@nestjs/common'
+
+
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy){
+
+
+    constructor(
+        
+        @InjectRepository(User)
+        private readonly userRepository: Repository<User>,
+
+        private readonly configService: ConfigService
+    ){
+        super({
+            secretOrKey: configService.get('JWT_SECRET'),
+            jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken()
+        })
+    }
+
+    async validate(payload: JwtPayloadInterface): Promise<User>{
+
+        const {email} = payload
+
+         const user = await this.userRepository.findOneBy({email})
+
+         if(!user) throw new UnauthorizedException('Token not valid')
+
+         if(!user.isActive) throw new UnauthorizedException('User is inactive')
+
+        return user
+    }
+}
+~~~
+
+- Si cambio la secret_key de la variable de entorno, el mismo token va a dar un error de autenticación "Unauthorized"
+- Esto esta bien que sea asi
+-----
+
+## Cambiar el email por el id en el payload
+
+- El email puede cambiar, por lo que conviene usar el uuid
+- En el payload del jwt en lugar del email debe ir el uuid. Va a haber que actualizar la estrategia
+- Primero, cuando hago el user de retorno en el login debo pedir también el id
+- Cambio el email por el id en la generación del token en el return
+  - Me marca error porque la interfaz me pide el email. Cambio la interfaz
+
+~~~js
+async login(loginUserDto: LoginUserDto){
+
+    const {email, password} = loginUserDto
+
+    const user = await this.userRepository.findOne({
+      where: {email},
+      select: {email: true, password: true, id: true}
+    })
+
+    if(!user){
+      throw new UnauthorizedException('Credenciales no válidas (email)')
+    }
+
+    if(!bcrypt.compareSync(password, user.password)){
+      throw new UnauthorizedException('Password incorrect')
+    }
+
+    return {
+      ...user,
+      token: this.getJwt({id: user.id})
+    } 
+  }
+~~~
+
+- Hago lo mismo en el método create(en lugar del {mail: user.email},{id: user.id}
+
+- Cambio la interfaz
+
+~~~js
+export interface JwtPayloadInterface{
+
+    id: string
+}
+~~~
+
+- Falta cambiar la estrategia, ya que desestructuro el email y ya no lo tengo
+- Cambio email por id
+
+~~~js
+import {PassportStrategy} from '@nestjs/passport'
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { User } from '../entities/user.entity';
+import { JwtPayloadInterface } from '../interfaces/jwt-payload.interface';
+import { Repository} from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
+import {UnauthorizedException, Injectable} from '@nestjs/common'
+
+
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy){
+
+
+    constructor(
+        
+        @InjectRepository(User)
+        private readonly userRepository: Repository<User>,
+
+        private readonly configService: ConfigService
+    ){
+        super({
+            secretOrKey: configService.get('JWT_SECRET'),
+            jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken()
+        })
+    }
+
+    async validate(payload: JwtPayloadInterface): Promise<User>{
+
+        const {id} = payload
+
+         const user = await this.userRepository.findOneBy({id})
+
+         if(!user) throw new UnauthorizedException('Token not valid')
+
+         if(!user.isActive) throw new UnauthorizedException('User is inactive')
+
+        return user
+    }
+}
+~~~
+- Vuelvo a generar un token, lo pruebo y debería ver la respuesta
+- Cuando me autentique en una ruta siempre va a pasar por el JwtStrategy. Ahi ya tengo el usuario, puedo hacer un console.log
+- Ahora, si cambia el correo no tengo problema
+- Veamos cómo puedo obtener el usuario en los controladores y dónde necesite
+------
+
+## Custom Property Decorator - GetUser
+
+- Puedo extraer el usuario del **Guard**
+- Si se me olvidara que tengo implementado el Guard y quisiera extraer el usuario, debería lanzar un error propio.
+  - Es un problema que yo como desarrollador del backend debo resolver
+- Hay varias formas. Puedo escribir nest -h para ver la ayuda y usar el CLI
+
+> nest g d nombre_decorador
+
+- Pero este decorador funciona de manera global, por clase y por controlador
+- No funciona para propiedad
+- **Para extraer el usuario** usaré **@Request** de @nestjs/common
+- Si hago un console.log de la request me manda un montón de info en consola
+
+~~~js
+  @Get('private')
+  @UseGuards( AuthGuard())
+  testingPrivateRoute(
+    @Request() request: Express.Request
+  ){
+    return {
+      ok: true
+    }
+  }
+~~~
+
+- **request.user** me devuelve el usuario
+- Esto así funcionaría pero no es muy bonito
+- Además necesito pasar por el Guard, por lo que habría que hacer un par de validaciones también
+- Mejor creemos un **Custom Property Decorator**
+- auth/decorators/get-user.decorator.ts
+- El createParamDecorator es una función que usa un callback que debe retornar algo
+
+~~~js
+import { createParamDecorator } from "@nestjs/common";
+
+export const GetUser = createParamDecorator(
+    ()=>{
+
+        return 'Hola mundo'
+    }
+)
+~~~
+
+- En el controller
+
+~~~js
+  @Get('private')
+  @UseGuards( AuthGuard())
+  testingPrivateRoute(
+        @GetUser() user: User
+  ){
+    console.log({user})  //imprime en consola Hola mundo
+    
+    return {
+      ok: true
+    }
+  }
+~~~
+
+- Lo que sea que retorne createParamDecorator es lo que voy a poder extraer
+- En el callback de createParamDecorator dispongo de la data y el context (lo importo de @nestjs/common)
+ 
+~~~js
+import { ExecutionContext, createParamDecorator } from "@nestjs/common";
+
+export const GetUser = createParamDecorator(
+    (data, ctx: ExecutionContext)=>{
+        console.log({data})
+        
+    }
+)
+~~~
+
+- La consola me devuelve data: undefined. 
+- Si voy al controlador y escribo 'email' en el decorador **@GetUser('email)** la consola me devuelve data: 'email'
+- Puedo pasarle todos los argumentos que quiera en un arreglo
+
+~~~js
+  @Get('private')
+  @UseGuards( AuthGuard())
+  testingPrivateRoute(
+        @GetUser(['email', 'role', 'fullName']) user: User
+  ){
+    console.log({user})
+    return {
+      ok: true,
+      user
+    }
+  }
+~~~
+
+- El **ExecutionContext** es el contexto en el que se está ejecutando la función en la app
+- Tengo, entre otras cosas, **la Request** (tambien la Response)
+- Uso **switchToHttp.getRequest** para extraer la Request. Usaría getResponse para la Response
+- Lanzo un error 500 si no está el usuario porque es un error mío ya que debería haber pasado por el Guard
+
+~~~js
+import { ExecutionContext, InternalServerErrorException, createParamDecorator } from "@nestjs/common";
+
+export const GetUser = createParamDecorator(
+    (data, ctx: ExecutionContext)=>{
+        
+        const req = ctx.switchToHttp().getRequest()
+
+        const user = req.user
+
+        if(!user) throw new InternalServerErrorException('User not found')
+
+        return user   
+    }
+)
+~~~
+-------
+
+## Tarea Custom Decorators
+
+- Quiero usar el @GetUser dos veces en el mismo endpoint en el controller
+- Una sin pasarle ningún argumento que me devuelva el User completo
+- Otra pasándole solo el email como parámetro a @GetUser para que me devuelva el email 
+- Podría usar los Pipes para validar/transformar la data pertfectamente, pero no es el caso
+
+~~~js
+  @Get('private')
+  @UseGuards( AuthGuard())
+  testingPrivateRoute(
+        @GetUser() user: User,
+        @GetUser('email') email: string
+  ){
+    console.log({user})
+    return {
+      ok: true,
+      user
+    }
+  }
+~~~
+
+- Uso un ternario para devolver si no hay data el user, y si la hay user[propiedad_computada]
+- get-user.decorator.ts
+
+~~~js
+import { ExecutionContext, InternalServerErrorException, createParamDecorator } from "@nestjs/common";
+
+export const GetUser = createParamDecorator(
+    (data, ctx: ExecutionContext)=>{
+        
+        const req = ctx.switchToHttp().getRequest()
+
+        const user = req.user
+
+        if(!user) throw new InternalServerErrorException('User not found')
+
+        return (!data) ? user : user[data]   
+    }
+)
+~~~
+
+- Si hago un console.log de la Request usando el decorador @Request y lo imprimo en consola, puedo crear un decorador que me devuelva lo que yo quiera de ella, por ejemplo los rawHeaders
+- Aunque es un decorador que iría más bien en el módulo common, lo pondré junto al otro decorador por tenerlos agrupados
+- get-rawheaders.decorator.ts
+
+~~~js
+import { ExecutionContext, createParamDecorator } from "@nestjs/common";
+
+
+export const GetRawHeaders = createParamDecorator(
+    (data, ctx: ExecutionContext)=>{
+
+        const req = ctx.switchToHttp().getRequest()
+
+        
+        return  req.rawHeaders
+    }
+)
+~~~
+
+- auth.controller
+
+~~~js
+  @Get('private')
+  @UseGuards( AuthGuard())
+  testingPrivateRoute(
+        @GetUser() user: User,
+        @GetUser('email') email: string,
+        @GetRawHeaders() rawHeaders: string[]
+  ){
+    return {
+      ok: true,
+      user,
+      email,
+      rawHeaders
+    }
+  }
+~~~
+
+- Nest ya tiene su propio decorador **@Headers** para los headers (de @nestjs/common)
+- El tipo de headers es IncomingHttpHeaders (importar de http)
+--------
+
+
+## Custom Guard y Custom Decorator
+
+- En este momento, si yo quisiera validar el rol podría hacerlo en el controlador con user.roles.includes('admin), por ejemplo
+- Pero voy a crear un Guard y un Custom Decorator para esta tarea
+- Creo otro Get en el auth.controller
+
+~~~js
+@Get('private2')
+@UseGuards(AuthGuard())
+privateRoute2(
+  @GetUser() user: User,
+){
+  return{
+    ok: true,
+    user
+  }
+}
+~~~
+
+- Este Get necesita tener ciertos roles, y quiero crear un decorador que los valide
+- Puedo usar **@SetMetaData**
+
+~~~js
+@Get('private2')
+@UseGuards(AuthGuard())
+@SetMetadata('roles', ['admin'])
+privateRoute2(
+  @GetUser() user: User,
+){
+  return{
+    ok: true,
+    user
+  }
+}
+~~~
+
+- Con esto no es suficiente, debo crear un Guard para que lo evalue
+- Puedo hacerlo con el CLI usando gu
+
+> nest g gu auth/guards/userRole --no-spec
+
+- Esto genera por mi
+
+~~~js
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { Observable } from 'rxjs';
+
+@Injectable()
+export class UserRoleGuard implements CanActivate {
+  
+  canActivate(
+    context: ExecutionContext,
+  ): boolean | Promise<boolean> | Observable<boolean> {
+
+    console.log('UserGuard')
+
+    return true;
+  }
+}
+~~~
+
+- Para que un Guard sea válid tiene que implementar canActivate
+- Tiene que retornar un boolean o una Promesa que sea un boolean, si es true lo deja pasar si no no
+- También puede devolver un Observable que emita un boolean
+- Los Guards por defecto son async
+- Coloco el userRoleGuard en el controlador
+
+~~~js
+@Get('private2')
+@UseGuards(AuthGuard(), UserRoleGuard)
+@SetMetadata('roles', ['admin'])
+privateRoute2(
+  @GetUser() user: User,
+){
+  return{
+    ok: true,
+    user
+  }
+}
+~~~
+
+- Porqué no lleva paréntesis?
+- Podría generar una nueva instancia con new
+- **AuthGuard ya devuelve la instancia**, por lo que los Guards personalizados no llevan paréntesis, **para usar la misma instancia**
+- Se puede hacer usando el new pero eso lo que haría es generar una nueva instancia, y lo que queremos es usar la misma
+- Si ejecuto el endpoint private2 con el token en consola imprime el console.log, con lo que ha pasado por el Guard
+- Los Guards se encuentran dentro del ciclo de vida de Nest
+  - Están dentro de la **Exception Zone**
+  - Significa que si devolviera un error en lugar del true va a ser controlado por Nest (BadRequestException o lo que fuera)
+- Este Guard se va a encargar de verificar los roles.
+- Para ello primero debo extraer la metadata del decorador **@SetMetadata**
+- Aquí **no se pone fácil la cosa**. **Tirando de documentación**
+- Inyecto Reflector en el constructor
+- Lo uso para guardar en la variable roles con el .get('roles') (lo que pone en **@SetMetadata**) y el target es context.getHandler()
+
+~~~js
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Observable } from 'rxjs';
+
+@Injectable()
+export class UserRoleGuard implements CanActivate {
+
+  constructor(
+    private readonly reflector: Reflector
+  ){}
+
+
+  canActivate(
+    context: ExecutionContext,
+  ): boolean | Promise<boolean> | Observable<boolean> {
+
+    const validRoles: string[] = this.reflector.get('roles', context.getHandler() )
+
+    console.log({validRoles}) //para testear que los haya extraído bien
+
+    return true;
+  }
+}
+~~~
+
+- Ahora lo que debo hacer es comparar si existen en el arreglo de roles de mi entidad
+- Si no existe niguno voy a devolver un error
+--------
+
+## Verificar Rol del usuario
+
+- Para obtener el usuario es el mismo código de **ctx.switchToHttp().getrequest()**
+- Tipo el usuario con **as User** así obtengo el completado también
+- Verifico que venga el usuario para asegurarme de que se usa el Guard de autenticación
+- Uso un ciclo for para recorrer el array y verificar el rol
+- Si no es un role valido lanzaré un ForbiddenException
+
+~~~js
+import { BadRequestException, CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Observable } from 'rxjs';
+import { User } from 'src/auth/entities/user.entity';
+
+@Injectable()
+export class UserRoleGuard implements CanActivate {
+
+  constructor(
+    private readonly reflector: Reflector
+  ){}
+
+
+  canActivate(
+    context: ExecutionContext,
+  ): boolean | Promise<boolean> | Observable<boolean> {
+
+    const validRoles: string[] = this.reflector.get('roles', context.getHandler() )
+
+    const req = context.switchToHttp().getRequest()
+    const user = req.user as User
+
+    if(!user) throw new BadRequestException('User not found')
+
+    for(const role of user.roles){
+      if(validRoles.includes(role)){
+        return true
+      }
+    }
+    throw new ForbiddenException(`User ${user.fullName} needs a valid role`)
+  }
+}
+~~~
+
+- Para que lo deje pasar añado en TablePlus el role de admin al usuario
+- Para usar esta lógica que estoy implementando tengo que memorizar muchas cosas. Establecer el SetMetadata, etc
+- Si me olvidara del SetMetadata, al extraer los validRoles mi app reventaría. Debería validarlo
+- También es muy volatil el arreglo de roles, me puedo equivocar. El SetMetadata se usa muy poco como decorador directamente
+- Mejor crear un **Custom Decorator**
+-----
+
+## Custom Decorator RoleProtected
+
+- Si no son decoradores de propiedades, perfectamente puedo usar el CLI
+- ¿El decorador que voy a crear esta fuertemente ligado al módulo auth o es algo general que podría ir en common?
+  - Me va aservir para establecer los roles que el usuario ha de tener para poder ingresar a la ruta
+  - Por lo que SI está amarrado al módulo de auth
+
+> nest g d auth/decorators/roleProtected --no-spec
+
+- Esto me genera este código
+
+~~~js
+import { SetMetadata } from '@nestjs/common';
+
+export const RoleProtected = (...args: string[]) => SetMetadata('role-protected', args);
+~~~
+
+- Cambio 'role-protected' en el SetMetadata por 'roles'
+- Defino el string con una variable para tenerla en un solo lugar, por si hubiera cambios
+- Importo META_ROLES en el UserRoleGuard para añadirlo en el this.reflector.get
+
+~~~js
+import { SetMetadata } from '@nestjs/common';
+
+export const META_ROLES= 'roles'
+
+export const RoleProtected = (...args: string[]) =>{
+    
+    SetMetadata(META_ROLES, args);
+} 
+~~~
+
+- Creo una enum en la carpeta de interfaces para especificar los roles que voy a permitir
+- Tienen que ser strings, Typescript les asigna un número 0,1,2
+
+~~~js
+export enum ValidRoles{
+
+    admin= 'admin', 
+    superUser= 'super-user',
+    user= 'user'    
+}
+~~~
+
+- Le paso el enum como tipo  como parámetro del decoradorrole-protected
+
+~~~js
+import { SetMetadata } from '@nestjs/common';
+import { ValidRoles } from '../interfaces/valid-roles';
+
+export const META_ROLES= 'roles'
+
+export const RoleProtected = (...args: ValidRoles[]) =>{
+    
+   return  SetMetadata(META_ROLES, args);
+} 
+~~~
+
+- Uso el **@RoleProtected** en el controller
+- Si lo pusiera sin parámetros, cualquier usuario tendría acceso a la ruta
+- Uso el **enum**
+
+~~~js
+@Get('private2')
+@UseGuards(AuthGuard(), UserRoleGuard)
+@RoleProtected(ValidRoles.admin)
+privateRoute2(
+  @GetUser() user: User,
+){
+  return{
+    ok: true,
+    user
+  }
+}
+~~~
+
+- Puedo pasarle varios valores separados por comas, **@RoleProtected(ValidRoles.admin, ValidRoles.user)**
+- Es fácil que me olvide de implementar el AuthGuard (autenticación), o el RoleProtected(autorización)
+- Podemos crear un único decorador que lo haga todo
+-------
+
+## Composición de decoradores
+
 - 
