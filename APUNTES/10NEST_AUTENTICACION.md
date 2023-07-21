@@ -1478,4 +1478,569 @@ privateRoute2(
 
 ## Composición de decoradores
 
-- 
+- Con **applyDecorators de @nestjs/common** podemos hacer composición de decoradores
+- Muy útil para agrupar varios decoradores en uno
+- Creo un tercer endpoint privateRoute3
+  - Va a funcionar igual solo que en lugar de tener tantos decoradores tendrñe uno que haga todo el trabajo
+- controller
+
+~~~js
+@Get('private3')
+@UseGuards(AuthGuard(), UserRoleGuard)
+@RoleProtected(ValidRoles.admin)
+privateRoute3(
+  @GetUser() user: User,
+){
+  return{
+    ok: true,
+    user
+  }
+}
+~~~
+
+- Creo el auth.decorator.ts en /auth/decorators/
+- En lugar de usar el SetMetadata puedo usar el RoleProtected
+- AuthGuard de @nestjs/passport hay que ejecutarlo porque así funciona
+- Le paso jwt
+
+
+~~~js
+import { UseGuards, applyDecorators } from "@nestjs/common";
+import { META_ROLES, RoleProtected } from "./role-protected.decorator";
+import { AuthGuard } from "@nestjs/passport";
+import { ValidRoles } from "../interfaces/valid-roles";
+import { UserRoleGuard } from "../guards/user-role/user-role.guard";
+
+
+
+export function Auth(...roles: ValidRoles[]){
+
+    return applyDecorators(
+        RoleProtected(...roles),
+        UseGuards(AuthGuard('jwt'), UserRoleGuard)      
+    )
+}
+~~~
+
+- Lo uso en el controller
+- Si lo envio sin nada entre paréntesis debe querer decir que no necesita ningún role especial y pasar 
+
+~~~js
+  @Get('private3')
+  @Auth()
+  privateRoute3(
+    @GetUser() user: User,
+  ){
+    return{
+      ok: true,
+      user
+    }
+  }
+~~~
+
+- NOTA: EN USERROLEGUARD FALTABAN DOS LINEAS DE CÓDIGO PARA QUE PUEDA PASAR SIN ROLES
+- UserRoleGuard
+
+~~~js
+import { BadRequestException, CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Observable } from 'rxjs';
+import { META_ROLES } from 'src/auth/decorators/role-protected.decorator';
+import { User } from 'src/auth/entities/user.entity';
+
+@Injectable()
+export class UserRoleGuard implements CanActivate {
+
+  constructor(
+    private readonly reflector: Reflector
+  ){}
+
+
+  canActivate(
+    context: ExecutionContext,
+  ): boolean | Promise<boolean> | Observable<boolean> {
+
+    const validRoles: string[] = this.reflector.get(META_ROLES, context.getHandler() )
+
+    //faltaba este código!!!
+    if(!validRoles) return true  //<---------------- 
+    if (validRoles.length === 0) return true //<-----------
+    //
+    
+    const req = context.switchToHttp().getRequest()
+    const user = req.user as User
+
+    if(!user) throw new BadRequestException('User not found')
+
+    for(const role of user.roles){
+      if(validRoles.includes(role)){
+        return true
+      }
+    }
+    throw new ForbiddenException(`User ${user.fullName} needs a valid role`)
+  }
+}
+~~~
+
+- Debo estar autenticado con el token
+- Si quiero que deba tener algún role en particular uso el ValidRoles
+
+~~~js
+@Get('private3')
+@Auth(ValidRoles.admin)
+privateRoute3(
+  @GetUser() user: User,
+){
+  return{
+    ok: true,
+    user
+  }
+}
+~~~
+
+- Si no pusiera el @Auth tendría un error porque necesitamos el usuario en la Request
+- Para usarlo en otros endpoints de otros módulos, como el SEED por ejemplo, que solo debería hacerlo el admin, debo **importar el PassportModule** en el módulo dónde quiera utilizar el **@Auth**
+-----
+
+## Auth en otros módulos
+
+- Quiero usar en mi **SeedController** el decorador **@Auth**
+  - **@Auth** está usando **@AuthGuard** que está asociado a **Passport**, y Passport es un **módulo**
+  - En el error en consola al intentar usar **@Auth** fuera del módulo lo que está pidiendo el el **"defaultStrategy"**
+- En el modulo de **Auth** tengo exportado el **JwtStrategy** y el **PassportModule**
+
+~~~js
+import { Module } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { AuthController } from './auth.controller';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { User } from './entities/user.entity';
+import { PassportModule } from '@nestjs/passport';
+import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtStrategy } from './strategies/jwt.strategy';
+
+@Module({
+  controllers: [AuthController],
+  providers: [AuthService, JwtStrategy],
+  imports: [
+    ConfigModule,
+    TypeOrmModule.forFeature([User]),
+    PassportModule.register({defaultStrategy: 'jwt'}),
+    
+    JwtModule.registerAsync({
+
+        imports: [ConfigModule],
+        inject: [ConfigService],
+        useFactory: (configService: ConfigService)=>{
+
+          return {
+            secret: configService.get('JWT_SECRET'),
+            signOptions:{
+              expiresIn: '2h'
+            }
+          }
+        }
+    })
+  ],
+  exports: [TypeOrmModule, JwtStrategy, PassportModule, JwtModule]
+})
+export class AuthModule {}
+~~~
+
+- Es lo que necesito para exponer todo lo que está relacionado a Passport fuera de este módulo
+- Importo AuthModule en el módulo de SEED. Es todo
+
+~~~js
+import { Module } from '@nestjs/common';
+import { SeedService } from './seed.service';
+import { SeedController } from './seed.controller';
+import { ProductsModule } from 'src/products/products.module';
+import { AuthModule } from 'src/auth/auth.module';
+
+@Module({
+  controllers: [SeedController],
+  providers: [SeedService],
+  imports:[ProductsModule, AuthModule]
+})
+export class SeedModule {}
+~~~
+
+- Ahora puedo usar el decorador **@Auth** en el SEED controller
+
+~~~js
+import { Controller,Get} from '@nestjs/common';
+import { SeedService } from './seed.service';
+import { Auth } from 'src/auth/decorators/auth.decorators';
+import { ValidRoles } from 'src/auth/interfaces/valid-roles';
+
+
+@Controller('seed')
+export class SeedController {
+  constructor(private readonly seedService: SeedService) {}
+
+  @Get()
+  @Auth(ValidRoles.admin)
+  executeSeed() {
+    return this.seedService.runSeed();
+  }
+}
+~~~
+
+- Si quiero proteger las rutas de productos solo tengo que repetir el procedimiento
+- Si lo que quiero es que para cualquiera de las rutas el usuario **deba estar autenticado** coloco @Auth en el Controlador padre (sin ningún rol como parámetro)
+- El usuario deberá tener el token de autorización (independientemente del rol)
+- Falta crear en el Seed una forma de crear usuarios admin
+-------
+
+## Usuario que creó el producto
+
+- Sería útil saber qué usuario creó el producto. Tenemos una autenticación en marcha que me lo puede decir
+- Cómo se relaciona un usuario con un producto. Un usuario puede crear muchos productos
+- Es una relación de uno a muchos **OneToMany** 
+- En productos, muchos productos pueden ser de un usuario, por lo que es una relación de muchos a uno **ManyToOne**
+- En user.entity ( en el módulo auth)
+- El OneToMany no va a hacer que cree ningún valor nuevo en la columna, pero en Product si. Importo Product para tipar el valor
+- Lo primero que debo añadir es **la relación con la otra entidad**
+- Luego, como la entidad se relaciona con esta tabla, seria **product.user**, pero este user no existe todavía
+
+~~~js
+@OneToMany(
+    ()=>Product,
+    (product)=> product.user //<--------este .user no existe todavía 
+)
+product: Product
+~~~
+
+- En product.entity
+
+~~~js
+@ManyToOne(
+    ()=>User,
+    (user)=>user.product
+)
+user: User
+~~~
+
+- Ahora en los productos, en TablePlus, hay una nueva columna que es userId. TypeOrm lo hizo por nosotros
+- Lo normal es que cuando haga una consulta sobre el producto vaya a querer también el usuario que creó el producto
+- Para que lo muestre en la consulta debo añadir eñl eager en true, para que cargue automáticamente esta relación
+
+~~~js
+@ManyToOne(
+    ()=>User,
+    (user)=>user.product,
+    {eager: true}
+)
+user: User
+~~~
+
+- Por ahora la columna de usuarios en producto solo tiene valores NULL porque en el SEED no había usuarios asignados a productos
+- Esto es un error que debemos resolver.
+- No debería permitir la creación de productos con el campo de usuario en NULL
+- Borro toda la tabla de productos en TablePlus
+- Ahora falta que al crear un producto, especifique que usuario lo creó a través de la autenticación
+------
+
+## Insertar userId en los productos
+
+- En el módulo de products **debo importar el AuthModule** para usar la autenticación con **@Auth** en el controller 
+- Solo los admin van a poder crear productos
+- Uso el decorador **@GetUser** para extraer el usuario
+- Se lo paso al servicio
+- products.controller
+
+~~~js
+@Post()
+@Auth(ValidRoles.admin)
+create(
+  @Body() createProductDto: CreateProductDto, 
+  @GetUser() user: User
+  ) {
+        return this.productsService.create(createProductDto, user);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id', ParseUUIDPipe) id: string, 
+    @Body() updateProductDto: UpdateProductDto,
+    @GetUser()user: User) {
+    return this.productsService.update(id, updateProductDto, user);
+  }
+~~~
+
+- Voy al servicio
+- Actualizo create y update. Le paso el user a product, y antes de salvar en el update guardo el user en product.user
+
+~~~js
+ async create(createProductDto: CreateProductDto, user:User) {
+    try {
+
+      const {images = [], ...productDetails} = createProductDto
+      
+      const product = this.productRepository.create({
+        ...productDetails,
+        images: images.map(image=> this.productImageRepository.create({url: image})),
+        user
+      })
+
+      await this.productRepository.save(product)
+
+      return {...product, images}
+      
+    } catch (error) {
+
+      this.handleDBExceptions(error)
+    }
+
+  }
+
+   async update(id: string, updateProductDto: UpdateProductDto, user: User) {
+
+    const {images, ...toUpdate} = updateProductDto
+
+
+    const product = await this.productRepository.preload({id, ...toUpdate})
+
+    if(!product) throw new NotFoundException(`Product with id : ${id} not found`)
+
+    const queryRunner = this.dataSource.createQueryRunner()
+    await queryRunner.connect()
+    await queryRunner.startTransaction()
+
+    try {
+
+      if(images){
+        await queryRunner.manager.delete(ProductImage, {product: {id}}) //con esto borramos las imágenes anteriores
+
+       product.images= images.map(image=> this.productImageRepository.create({url: image}))
+
+      }else{
+          //product.images = await this.productImageRepository.findBy({product: {id}}) puedo hacerlo así pero usaré findOnePlain
+      }
+      
+      product.user= user
+      await queryRunner.manager.save(product)
+
+      await queryRunner.commitTransaction()  //commit
+      await queryRunner.release() //desconexión
+
+      return this.findOnePlane( id ) 
+
+    } catch (error) {
+      await queryRunner.rollbackTransaction()
+      await queryRunner.release()
+
+      this.handleDBExceptions(error)
+    }
+  }
+~~~
+
+- Tengo un error en el SEED porque llamo al productService.create y no le estoy pasando el user
+- Muteo la linea de código donde está el error para poder compilar y crear un producto
+
+>  //insertPromises.push(this.productsService.create(product))  
+
+### NOTA: Si al crear el producto aparece un error que dice Cannot read properties of undefined(reading 'challenge') es porque en la composición del decorador @Auth, en su decorador @AuthGuard le falta pasarle 'jwt'
+
+- Como tengo eager en true en la respuesta me carga directamente el usuario. Si no tendría que hacerlo manualmente
+- Falta hacer funcional el SEED ya que le falta el usuario
+-------
+
+## SEED de usuarios, productos e imágenes
+
+- Voy a crear un método para purgar las tablas de manera manual en el orden respectivo
+  - Si intento borrar primero los usuarios, estos están siendo utilizados por los productos, la integridad referencial me va a molestar
+- Borro todos los productos con el servicio de productos
+- Para los usuarios debo inyectar el repositorio de usuarios
+  - Uso el decorador **@InjectRepository**
+  - Importo User y Repository
+- Estoy exportando TypeORM y en TypeORM ya venía el usuario, por eso no da error
+- Con el queryBuilder hago el delete, al no poner el nada en el where es todo, lo ejecuto
+  - Recuerda que al tener el cascade en true va a borrar las imágenes también
+- LLamo el método que he creado deleteTables en el runSEED
+- Antes de insertar productos debo insertar usuarios
+- Creo la interfaz en seed-data.ts
+- Añado users al SeedData
+- Añado los users a initialData
+
+~~~js
+export interface SeedUser{
+    email: string
+    fullName: string
+    password: string
+    roles: string[]
+}
+
+export interface SeedData {
+    users: SeedUser[]
+    products: SeedProduct[]
+}
+
+
+export const initialData: SeedData = {
+
+    users:[
+        {
+            email: 'test1@google.com',
+            fullName: 'Test One',
+            password: 'Abc123',
+            roles: ['admin']
+        },
+        {
+            email: 'test2@google.com',
+            fullName: 'Test Two',
+            password: 'Abc123',
+            roles: ['user', 'super']
+        }
+
+    ],
+
+    products: [ (etc...etc)
+~~~
+
+- Ahora puedo usar los usuarios para insertarlos masivamente desde el servicio
+- Este firstUser que me retorna se lo paso a insertNewProducts ( se lo paso al método para que no de error) y se lo paso al forEach, para que lo inserte en cada producto, por eso necesitaba retornar el user[0]
+- seed.service
+
+~~~js
+import { Injectable } from '@nestjs/common';
+import { ProductsService } from 'src/products/products.service';
+import { initialData } from './data/seed-data';
+import { InjectRepository } from '@nestjs/typeorm';
+import { User } from 'src/auth/entities/user.entity';
+import { Repository } from 'typeorm';
+
+
+@Injectable()
+export class SeedService {
+
+  constructor(
+    private readonly productsService: ProductsService,
+
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>
+  ){}
+
+  private async insertUsers(){
+
+    const seedUsers= initialData.users
+    const users: User[] = []
+
+    seedUsers.forEach(user=>{
+      users.push(this.userRepository.create(user)) //esto no salva el usuario en la db
+    })
+
+    const dbUsers = await this.userRepository.save(seedUsers)
+
+    return dbUsers[0] //retorno el primer usuario para que le pueda mandar insertUsers a insertProducts
+
+  }
+
+  async runSeed() {
+
+    await this.deleteTables()
+    const firstUser = await this.insertUsers()
+
+    this.insertNewProducts(firstUser)
+
+    const products = initialData.products
+
+
+  }
+
+  private async deleteTables(){
+
+    await this.productsService.deleteAllProducts()
+
+    const queryBuilder = this.userRepository.createQueryBuilder()
+
+    await queryBuilder
+    .delete()
+    .where({})
+    .execute()
+
+
+
+  }
+
+  private async insertNewProducts(user: User){
+   await  this.productsService.deleteAllProducts()
+
+   const products = initialData.products
+   const insertPromises = []
+
+
+   products.forEach(product=>{
+     insertPromises.push(this.productsService.create(product, user))      
+   })
+
+   await Promise.all(insertPromises)
+
+   return `SEED EXECUTED`;
+  }
+}
+
+~~~
+
+- Creo los usuarios, regreso un usuario, ese usuario es el que utilizo para insertar los productos
+- El password no está encriptado, por lo que necesita encriptación si quiero que haga match!!
+- Para ello no hay más que usar bcrypt en la data en seed-data.ts 
+
+~~~js
+import * as bcrypt from 'bcrypt'
+
+export const initialData: SeedData = {
+
+    users:[
+        {
+            email: 'test1@google.com',
+            fullName: 'Test One',
+            password: bcrypt.hashSync('Abc123',10),
+            roles: ['admin']
+        },
+        {
+            email: 'test2@google.com',
+            fullName: 'Test Two',
+            password: bcrypt.hashSync('Abc123',10) ,
+            roles: ['user', 'super']
+        }
+
+    ],
+
+    (etc...etc)
+~~~
+-------
+
+## Check AuthStatus
+
+- Falta poder revalidar el token. No es revalidar exactamente
+- Es usar el token suministrado y generar un nuevo token basado en el anterior
+- Si no hago esto, si el usuario refresca el navegador no va a estar autenticado
+- Creo un nuevo endpoint en auth.controller (con su respectivo servicio)
+- Un Get que llamaré checkAuthStatus
+
+~~~js
+@Get('check-auth')
+@Auth()
+checkAuthStatus(
+  @GetUser() user: User,
+){
+  return this.authService.checkAuthStatus(user)
+}
+~~~
+
+- Esparzo el user, genero un nuevo JWT con el id que es el user.id
+- auth.service
+
+~~~js
+async checkAuthStatus(user: User){
+  return {
+    ...user,
+    token: this.getJwt({id: user.id})
+  }
+}
+~~~
+
+- En la respuesta regreso un nuevo JWT y la info de name, fullName, email, etc por si le sirve al frontend
+- El usuario tiene que estar activo
