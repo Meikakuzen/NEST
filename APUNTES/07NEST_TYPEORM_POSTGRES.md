@@ -305,7 +305,7 @@ bootstrap();
 - Voy al create-product.dto
 - Coloco las propiedades que voy a necesitar o son opcionales en la data de entrada
 
-~~~js
+~~~ts
 export class CreateProductDto {
 
     title: string
@@ -328,7 +328,7 @@ export class CreateProductDto {
 - Uso el each en true para asegurarme que cada valor del array sea un string
 - Uso IsIn para establecer que tiene que ser uno de esos valores
 
-~~~js
+~~~ts
 import { IsString, MinLength, IsNumber, IsOptional, IsInt, IsPositive, IsArray, IsIn } from "class-validator"
 
 export class CreateProductDto {
@@ -1000,4 +1000,3 @@ tags: string[]
 tags?: string[]
 ~~~
 
-- 

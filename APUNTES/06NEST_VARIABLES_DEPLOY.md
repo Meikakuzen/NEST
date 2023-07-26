@@ -204,7 +204,7 @@ export class AppModule {
 
 - Inyecto en el constructor del pokemon.service
 
-~~~js
+~~~ts
 import {ConfigService} from '@nestjs/config'
 
 @Injectable()
@@ -215,6 +215,7 @@ export class PokemonService {
     private readonly pokemonModel: Model<Pokemon>,
     private readonly configService: ConfigService
     ){}
+ }
 ~~~
 
 - Esto por si solo da error. Dice que la primera dependencia si puede resolverla, pero no la segunda (en el índice 1)

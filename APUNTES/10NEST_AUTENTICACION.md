@@ -710,7 +710,7 @@ export class AuthModule {}
 - Esparzo con el spread mi user en el return, y añado el token
   - Si coloco directamente donde el payload user.email se me queja porque un string no cumple con el objeto de jwtPayloadInterface, así que lo meto como un objeto *{token: user.email}*
   - Hago lo mismo en el login
-~~~js
+~~~ts
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -878,7 +878,7 @@ export class User{
 - Recuerda que en la estrategia, en el validate hago la verificación
 - Es la estrategia que está usando por defecto el **Guard**
 
-~~~js
+~~~ts
 import {PassportStrategy} from '@nestjs/passport'
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { User } from '../entities/user.entity';
@@ -1226,7 +1226,7 @@ export const GetRawHeaders = createParamDecorator(
 - Pero voy a crear un Guard y un Custom Decorator para esta tarea
 - Creo otro Get en el auth.controller
 
-~~~js
+~~~ts
 @Get('private2')
 @UseGuards(AuthGuard())
 privateRoute2(
@@ -1242,7 +1242,7 @@ privateRoute2(
 - Este Get necesita tener ciertos roles, y quiero crear un decorador que los valide
 - Puedo usar **@SetMetaData**
 
-~~~js
+~~~ts
 @Get('private2')
 @UseGuards(AuthGuard())
 @SetMetadata('roles', ['admin'])
@@ -1287,7 +1287,7 @@ export class UserRoleGuard implements CanActivate {
 - Los Guards por defecto son async
 - Coloco el userRoleGuard en el controlador
 
-~~~js
+~~~ts
 @Get('private2')
 @UseGuards(AuthGuard(), UserRoleGuard)
 @SetMetadata('roles', ['admin'])
@@ -1315,7 +1315,7 @@ privateRoute2(
 - Inyecto Reflector en el constructor
 - Lo uso para guardar en la variable roles con el .get('roles') (lo que pone en **@SetMetadata**) y el target es context.getHandler()
 
-~~~js
+~~~ts
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
@@ -1457,7 +1457,7 @@ export const RoleProtected = (...args: ValidRoles[]) =>{
 - Si lo pusiera sin parámetros, cualquier usuario tendría acceso a la ruta
 - Uso el **enum**
 
-~~~js
+~~~ts
 @Get('private2')
 @UseGuards(AuthGuard(), UserRoleGuard)
 @RoleProtected(ValidRoles.admin)
@@ -1484,7 +1484,7 @@ privateRoute2(
   - Va a funcionar igual solo que en lugar de tener tantos decoradores tendrñe uno que haga todo el trabajo
 - controller
 
-~~~js
+~~~ts
 @Get('private3')
 @UseGuards(AuthGuard(), UserRoleGuard)
 @RoleProtected(ValidRoles.admin)
@@ -1750,7 +1750,7 @@ user: User
 - Se lo paso al servicio
 - products.controller
 
-~~~js
+~~~ts
 @Post()
 @Auth(ValidRoles.admin)
 create(

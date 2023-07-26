@@ -199,7 +199,7 @@ export class ProductImage{
 
 - Debo añadir images al create-product.dto para que no me de error
 
-~~~js
+~~~ts
 import { IsString, MinLength, IsNumber, IsOptional, IsInt, IsPositive, IsArray, IsIn } from "class-validator"
 
 export class CreateProductDto {
